@@ -3,7 +3,7 @@
 const querystring = require('querystring');
 const https = require("https");
 const jsonwebtoken = require('jsonwebtoken');
-const getConfigCached = require("./config");
+const getConfiguration = require("./config");
 const {redirect, respond} = require("./helpers");
 
 const PUBLIC_PATHS = [/\/favicons\//];
@@ -23,14 +23,16 @@ function parseCookies(headers) {
 
 function validateToken(config, token) {
   try {
-    const decoded = jsonwebtoken.verify(token, config.certificate, {
-      algorithms: [config.AUTH0_ALGORITHM],
-      audience: config.AUTH0_CLIENT_ID,
+    const certificate = config.certificate.replace(/\\n/gm, '\n');
+    const decoded = jsonwebtoken.verify(token, certificate, {
+      algorithms: [config.algorithm],
+      audience: config.client_id,
     });
 
     return true;
   }
   catch (err) {
+    console.error(err);
     return false;
   }
 }
@@ -40,7 +42,7 @@ function validateCookie(config, cookie) {
 }
 
 function loginCallback(config, request, callback) {
-  if (request.uri !== config.CALLBACK_PATH) {
+  if (request.uri !== config.callback_path) {
     return false;
   } // unhandled
 
@@ -62,14 +64,14 @@ function loginCallback(config, request, callback) {
   // Call Auth0 to get JWT token
   const headers = request.headers;
   const postData = querystring.stringify({
-    client_id: config.AUTH0_CLIENT_ID,
-    redirect_uri: `https://${headers.host[0].value}${config.CALLBACK_PATH}`,
-    client_secret: config.AUTH0_CLIENT_SECRET,
+    client_id: config.client_id,
+    redirect_uri: `https://${headers.host[0].value}${config.callback_path}`,
+    client_secret: config.client_secret,
     code: params.code,
     grant_type: "authorization_code"
   });
   const postOptions = {
-    host: config.AUTH0_DOMAIN,
+    host: config.domain,
     port: 443,
     path: "/oauth/token",
     method: "POST",
@@ -127,9 +129,9 @@ function redirectIfNotAuthenticated(config, request, callback) {
   // User is not authenticated.
   /* URI encode the original request so we can send as query param for when user is finally logged in */
   const encodedRedirectUrl = encodeURIComponent(request.querystring ? `${request.uri}?${request.querystring}` : request.uri);
-  const callbackUrl = `https://${headers.host[0].value}${config.CALLBACK_PATH}?dest=${encodedRedirectUrl}`;
+  const callbackUrl = `https://${headers.host[0].value}${config.callback_path}?dest=${encodedRedirectUrl}`;
   const encodedCallback = encodeURIComponent(callbackUrl);
-  const redirectUrl = `${config.AUTH0_LOGIN_URL}?client=${config.AUTH0_CLIENT_ID}&redirect_uri=${encodedCallback}`;
+  const redirectUrl = `${config.login_url}?client=${config.client_id}&redirect_uri=${encodedCallback}`;
 
   callback(null, redirect(redirectUrl, [{name: "session-token", value: ""}]));
 
@@ -153,7 +155,7 @@ function requireConfig(config, request, callback) {
 exports.handler = function (event, context, callback) {
   const request = event.Records[0].cf.request;
   
-  getConfigCached(request, function (err, config) {
+  getConfiguration(request, function (err, config) {
     if (err) {
       callback(err, null);
     }
@@ -166,4 +168,3 @@ exports.handler = function (event, context, callback) {
     }
   });
 };
-
